@@ -1,0 +1,6 @@
+.git
+.idea
+configs/.env
+configs/.*.env
+*.md
+data

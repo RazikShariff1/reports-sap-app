@@ -1,0 +1,39 @@
+services:
+  - type: web
+    name: reports-app
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /.well-known/health
+    envVars:
+      - key: DB_DIALECT
+        value: postgres
+      - key: DB_HOST
+        sync: false
+      - key: DB_PORT
+        value: "5432"
+      - key: DB_USER
+        sync: false
+      - key: DB_PASSWORD
+        sync: false
+      - key: DB_NAME
+        sync: false
+      - key: DB_SSL_MODE
+        value: require
+      - key: DB2_HOST
+        sync: false
+      - key: DB2_PORT
+        value: "5432"
+      - key: DB2_USER
+        sync: false
+      - key: DB2_PASSWORD
+        sync: false
+      - key: DB2_NAME
+        sync: false
+      - key: DB2_SSL_MODE
+        value: require
+      - key: ACCOUNT_SERVICE_URL
+        value: https://account-service-app.onrender.com
+      - key: COMMUNICATION_SERVICE_URL
+        value: https://communication-svc.onrender.com
+      - key: CLOUDINARY_URL
+        sync: false
