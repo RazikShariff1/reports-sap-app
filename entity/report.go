@@ -11,12 +11,20 @@ const (
 	StatusFailed     Status = "failed"
 )
 
+type Format string
+
+const (
+	FormatCSV Format = "csv"
+	FormatPDF Format = "pdf"
+)
+
 // Params is the filter a roster report is generated against: every individual
 // whose m_id is in MIDs AND whose profession_type_id is in ProfessionTypeIDs.
 type Params struct {
 	MIDs              []int  `json:"m_ids"`
 	ProfessionTypeIDs []int  `json:"profession_type_ids"`
 	FileName          string `json:"file_name"`
+	Format            Format `json:"format"`
 	AccountID         int    `json:"account_id"`
 }
 

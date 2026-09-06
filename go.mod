@@ -3,6 +3,7 @@ module reports-app
 go 1.26.2
 
 require (
+	github.com/go-pdf/fpdf v0.9.0
 	github.com/lib/pq v1.12.3
 	gofr.dev v1.58.0
 )

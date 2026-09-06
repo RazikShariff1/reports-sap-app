@@ -51,8 +51,9 @@ func Init() error {
 	return nil
 }
 
-// UploadCSV uploads r as a raw asset under publicID and returns its secure URL.
-func UploadCSV(ctx context.Context, r io.Reader, publicID string) (string, error) {
+// Upload uploads content as a raw asset under publicID (named publicID.ext)
+// and returns its secure URL.
+func Upload(ctx context.Context, content []byte, publicID, ext string) (string, error) {
 	timestamp := strconv.FormatInt(time.Now().Unix(), 10)
 
 	signature := sign(map[string]string{
@@ -77,12 +78,12 @@ func UploadCSV(ctx context.Context, r io.Reader, publicID string) (string, error
 		}
 	}
 
-	part, err := w.CreateFormFile("file", publicID+".csv")
+	part, err := w.CreateFormFile("file", publicID+"."+ext)
 	if err != nil {
 		return "", fmt.Errorf("create form file: %w", err)
 	}
 
-	if _, err := io.Copy(part, r); err != nil {
+	if _, err := io.Copy(part, bytes.NewReader(content)); err != nil {
 		return "", fmt.Errorf("copy file contents: %w", err)
 	}
 

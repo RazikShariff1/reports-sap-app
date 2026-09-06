@@ -27,10 +27,11 @@ func New(s *store.ReportStore) *ReportHandler {
 }
 
 type createReportRequest struct {
-	MIDs              []int  `json:"m_ids"`
-	ProfessionTypeIDs []int  `json:"profession_type_ids"`
-	FileName          string `json:"file_name"`
-	AccountID         int    `json:"account_id"`
+	MIDs              []int         `json:"m_ids"`
+	ProfessionTypeIDs []int         `json:"profession_type_ids"`
+	FileName          string        `json:"file_name"`
+	Format            entity.Format `json:"format"`
+	AccountID         int           `json:"account_id"`
 }
 
 // Create validates the filter, inserts a pending report row, and kicks off
@@ -55,6 +56,10 @@ func (h *ReportHandler) Create(ctx *gofr.Context) (any, error) {
 		missing = append(missing, "file_name")
 	}
 
+	if body.Format == "" {
+		missing = append(missing, "format")
+	}
+
 	if body.AccountID <= 0 {
 		missing = append(missing, "account_id")
 	}
@@ -63,10 +68,15 @@ func (h *ReportHandler) Create(ctx *gofr.Context) (any, error) {
 		return nil, gofrHTTP.ErrorMissingParam{Params: missing}
 	}
 
+	if body.Format != entity.FormatCSV && body.Format != entity.FormatPDF {
+		return nil, gofrHTTP.ErrorInvalidParam{Params: []string{"format"}}
+	}
+
 	params := entity.Params{
 		MIDs:              body.MIDs,
 		ProfessionTypeIDs: body.ProfessionTypeIDs,
 		FileName:          body.FileName,
+		Format:            body.Format,
 		AccountID:         body.AccountID,
 	}
 
@@ -91,7 +101,7 @@ func (h *ReportHandler) process(c *container.Container, id int64, params entity.
 		return
 	}
 
-	outputPath, err := report.Generate(bgCtx, id, params.FileName, params.MIDs, params.ProfessionTypeIDs)
+	outputPath, err := report.Generate(bgCtx, id, params.FileName, params.Format, params.MIDs, params.ProfessionTypeIDs)
 	if err != nil {
 		if markErr := h.store.MarkFailed(bgCtx, c, id, err.Error()); markErr != nil {
 			c.Logger.Errorf("report %d: mark failed: %v", id, markErr)
