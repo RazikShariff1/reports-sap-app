@@ -7,18 +7,51 @@ import (
 	"github.com/go-pdf/fpdf"
 )
 
-var (
-	detailColumns   = []string{"S.No", "Name", "Phone", "Email", "Halqa", "Masjid", "Profession", "Profession Type", "Address", "Last Met At"}
-	detailColWidths = []float64{10, 32, 22, 42, 20, 20, 24, 30, 36, 34}
-)
+// usableTableWidth is the printable width of the detail table on a portrait
+// A4 page: 210mm - 10mm left margin - 10mm right margin.
+const usableTableWidth = 190
 
-var (
-	compactDetailColumns   = []string{"S.No", "Name", "Phone", "Email", "Profession", "Profession Type", "Address", "Last Met At"}
-	compactDetailColWidths = []float64{10, 40, 26, 50, 28, 34, 44, 38}
-)
+// buildDetailColumns lays out the detail table's columns for data: when
+// CustomColumns is empty, Address and Last Met At are shown; otherwise they
+// are replaced by one blank (fillable-by-hand) column per custom name,
+// sharing whatever width Address/Last Met At would otherwise have used.
+func buildDetailColumns(data *reportData) (columns []string, widths []float64) {
+	if data.SingleMasjid {
+		columns = []string{"S.No", "Name", "Phone", "Profession", "Profession Type"}
+		widths = []float64{9, 34, 22, 25, 29}
+	} else {
+		columns = []string{"S.No", "Name", "Phone", "Halqa", "Masjid", "Profession", "Profession Type"}
+		widths = []float64{8, 27, 18, 17, 17, 20, 25}
+	}
+
+	if len(data.CustomColumns) == 0 {
+		columns = append(columns, "Address", "Last Met At")
+		if data.SingleMasjid {
+			widths = append(widths, 47, 24)
+		} else {
+			widths = append(widths, 36, 22)
+		}
+
+		return columns, widths
+	}
+
+	used := 0.0
+	for _, w := range widths {
+		used += w
+	}
+
+	each := (usableTableWidth - used) / float64(len(data.CustomColumns))
+
+	columns = append(columns, data.CustomColumns...)
+	for range data.CustomColumns {
+		widths = append(widths, each)
+	}
+
+	return columns, widths
+}
 
 func buildPDF(data *reportData) ([]byte, error) {
-	pdf := fpdf.New("L", "mm", "A4", "")
+	pdf := fpdf.New("P", "mm", "A4", "")
 	pdf.SetMargins(10, 10, 10)
 	pdf.SetAutoPageBreak(true, 15)
 	pdf.AddPage()
@@ -63,38 +96,82 @@ func writeHeaderField(pdf *fpdf.Fpdf, label, value string) {
 	pdf.CellFormat(0, 6, value, "", 1, "L", false, 0, "")
 }
 
+const tableLineHeight = 5
+
+// wrappedRowHeight returns the height needed to draw values across widths,
+// sizing the row to whichever cell wraps onto the most lines.
+func wrappedRowHeight(pdf *fpdf.Fpdf, widths []float64, values []string) int {
+	rowHeight := tableLineHeight
+	for i, v := range values {
+		if lines := len(pdf.SplitLines([]byte(v), widths[i]-2*pdf.GetCellMargin())); lines*tableLineHeight > rowHeight {
+			rowHeight = lines * tableLineHeight
+		}
+	}
+
+	return rowHeight
+}
+
+// writeWrappedRow draws one table row at the given height, wrapping each
+// cell's text onto multiple lines instead of overflowing into the next
+// column.
+func writeWrappedRow(pdf *fpdf.Fpdf, widths []float64, values []string, rowHeight int, fill bool) {
+	left, _, _, _ := pdf.GetMargins()
+	x, y := pdf.GetXY()
+
+	rectStyle := "D"
+	if fill {
+		rectStyle = "DF"
+	}
+
+	for i, v := range values {
+		pdf.Rect(x, y, widths[i], float64(rowHeight), rectStyle)
+		pdf.SetXY(x, y)
+		pdf.MultiCell(widths[i], tableLineHeight, v, "", "L", false)
+		x += widths[i]
+	}
+
+	pdf.SetXY(left, y+float64(rowHeight))
+}
+
 func writeDetailTable(pdf *fpdf.Fpdf, data *reportData) {
-	const rowHeight = 6
+	columns, widths := buildDetailColumns(data)
 
-	columns, widths := detailColumns, detailColWidths
-	if data.SingleMasjid {
-		columns, widths = compactDetailColumns, compactDetailColWidths
+	_, pageHeight := pdf.GetPageSize()
+	_, _, _, bottom := pdf.GetMargins()
+	pageBreakTrigger := pageHeight - bottom
+
+	drawHeader := func() {
+		pdf.SetFont("Helvetica", "B", 9)
+		pdf.SetFillColor(239, 239, 239)
+		writeWrappedRow(pdf, widths, columns, wrappedRowHeight(pdf, widths, columns), true)
+		pdf.SetFont("Helvetica", "", 9)
 	}
 
-	pdf.SetFont("Helvetica", "B", 9)
-	pdf.SetFillColor(239, 239, 239)
-
-	for i, header := range columns {
-		pdf.CellFormat(widths[i], rowHeight, header, "1", 0, "L", true, 0, "")
-	}
-
-	pdf.Ln(-1)
-
-	pdf.SetFont("Helvetica", "", 9)
+	drawHeader()
 
 	for _, r := range data.Rows {
-		values := []string{fmt.Sprintf("%d", r.SNo), r.Name, r.Phone, r.Email}
+		values := []string{fmt.Sprintf("%d", r.SNo), r.Name, r.Phone}
 		if !data.SingleMasjid {
 			values = append(values, r.Halqa, r.Masjid)
 		}
 
-		values = append(values, r.Profession, r.ProfessionType, r.Address, r.LastMetAt)
+		values = append(values, r.Profession, r.ProfessionType)
 
-		for i, v := range values {
-			pdf.CellFormat(widths[i], rowHeight, v, "1", 0, "L", false, 0, "")
+		if len(data.CustomColumns) == 0 {
+			values = append(values, r.Address, r.LastMetAt)
+		} else {
+			for range data.CustomColumns {
+				values = append(values, "")
+			}
 		}
 
-		pdf.Ln(-1)
+		rowHeight := wrappedRowHeight(pdf, widths, values)
+		if pdf.GetY()+float64(rowHeight) > pageBreakTrigger {
+			pdf.AddPage()
+			drawHeader()
+		}
+
+		writeWrappedRow(pdf, widths, values, rowHeight, false)
 	}
 }
 

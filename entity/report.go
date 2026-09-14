@@ -26,6 +26,9 @@ type Params struct {
 	FileName          string `json:"file_name"`
 	Format            Format `json:"format"`
 	AccountID         int    `json:"account_id"`
+	// CustomColumns, when set, replaces the PDF's Address and Last Met At
+	// columns with one blank (fillable-by-hand) column per name given here.
+	CustomColumns []string `json:"custom_columns,omitempty"`
 }
 
 type Report struct {

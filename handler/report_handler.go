@@ -18,6 +18,10 @@ import (
 	"reports-app/store"
 )
 
+// maxCustomColumns bounds how many blank fillable columns a PDF report can
+// request, keeping each column wide enough to be usable on an A4 page.
+const maxCustomColumns = 4
+
 type ReportHandler struct {
 	store *store.ReportStore
 }
@@ -32,6 +36,7 @@ type createReportRequest struct {
 	FileName          string        `json:"file_name"`
 	Format            entity.Format `json:"format"`
 	AccountID         int           `json:"account_id"`
+	CustomColumns     []string      `json:"custom_columns"`
 }
 
 // Create validates the filter, inserts a pending report row, and kicks off
@@ -72,12 +77,17 @@ func (h *ReportHandler) Create(ctx *gofr.Context) (any, error) {
 		return nil, gofrHTTP.ErrorInvalidParam{Params: []string{"format"}}
 	}
 
+	if len(body.CustomColumns) > maxCustomColumns {
+		return nil, gofrHTTP.ErrorInvalidParam{Params: []string{"custom_columns"}}
+	}
+
 	params := entity.Params{
 		MIDs:              body.MIDs,
 		ProfessionTypeIDs: body.ProfessionTypeIDs,
 		FileName:          body.FileName,
 		Format:            body.Format,
 		AccountID:         body.AccountID,
+		CustomColumns:     body.CustomColumns,
 	}
 
 	id, err := h.store.Create(ctx, ctx.Container, params)
@@ -101,7 +111,7 @@ func (h *ReportHandler) process(c *container.Container, id int64, params entity.
 		return
 	}
 
-	outputPath, err := report.Generate(bgCtx, id, params.FileName, params.Format, params.MIDs, params.ProfessionTypeIDs)
+	outputPath, err := report.Generate(bgCtx, id, params.FileName, params.Format, params.MIDs, params.ProfessionTypeIDs, params.CustomColumns)
 	if err != nil {
 		if markErr := h.store.MarkFailed(bgCtx, c, id, err.Error()); markErr != nil {
 			c.Logger.Errorf("report %d: mark failed: %v", id, markErr)

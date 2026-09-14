@@ -43,7 +43,6 @@ type rosterRow struct {
 	SNo            int
 	Name           string
 	Phone          string
-	Email          string
 	Halqa          string
 	Masjid         string
 	ProfessionType string
@@ -71,18 +70,22 @@ type reportData struct {
 	Masjid            string
 	Rows              []rosterRow
 	ProfessionSummary []professionCount
+	// CustomColumns, when set, replaces the Address and Last Met At columns
+	// in the PDF detail table with one blank column per name given here.
+	CustomColumns []string
 }
 
 // Generate runs the roster query for the given filters, renders the result
 // in the requested format, uploads it to Cloudinary under a name derived
-// from fileName, and returns its URL.
+// from fileName, and returns its URL. customColumns is only used for PDF
+// output; it is ignored for CSV.
 func Generate(ctx context.Context, reportID int64, fileName string, format entity.Format,
-	mIDs, professionTypeIDs []int) (outputPath string, err error) {
+	mIDs, professionTypeIDs []int, customColumns []string) (outputPath string, err error) {
 	switch format {
 	case entity.FormatCSV:
 		return generateCSV(ctx, reportID, fileName, mIDs, professionTypeIDs)
 	case entity.FormatPDF:
-		return generatePDF(ctx, reportID, fileName, mIDs, professionTypeIDs)
+		return generatePDF(ctx, reportID, fileName, mIDs, professionTypeIDs, customColumns)
 	default:
 		return "", fmt.Errorf("unsupported report format %q", format)
 	}
@@ -166,8 +169,8 @@ func generateCSV(ctx context.Context, reportID int64, fileName string, mIDs, pro
 // generatePDF runs the roster query, resolves each row's halqa/masjid name
 // via account-service-app, renders a PDF report, uploads it to Cloudinary,
 // and returns its URL.
-func generatePDF(ctx context.Context, reportID int64, fileName string, mIDs, professionTypeIDs []int) (string, error) {
-	data, err := fetchReportData(ctx, fileName, mIDs, professionTypeIDs)
+func generatePDF(ctx context.Context, reportID int64, fileName string, mIDs, professionTypeIDs []int, customColumns []string) (string, error) {
+	data, err := fetchReportData(ctx, fileName, mIDs, professionTypeIDs, customColumns)
 	if err != nil {
 		return "", err
 	}
@@ -187,7 +190,7 @@ func generatePDF(ctx context.Context, reportID int64, fileName string, mIDs, pro
 	return url, nil
 }
 
-func fetchReportData(ctx context.Context, fileName string, mIDs, professionTypeIDs []int) (*reportData, error) {
+func fetchReportData(ctx context.Context, fileName string, mIDs, professionTypeIDs []int, customColumns []string) (*reportData, error) {
 	rows, err := secondarydb.DB.QueryContext(ctx, rosterQuery, pq.Array(mIDs), pq.Array(professionTypeIDs))
 	if err != nil {
 		return nil, fmt.Errorf("query individuals: %w", err)
@@ -195,9 +198,10 @@ func fetchReportData(ctx context.Context, fileName string, mIDs, professionTypeI
 	defer rows.Close()
 
 	data := &reportData{
-		Title:        fileName,
-		GeneratedAt:  time.Now(),
-		SingleMasjid: len(mIDs) == 1,
+		Title:         fileName,
+		GeneratedAt:   time.Now(),
+		SingleMasjid:  len(mIDs) == 1,
+		CustomColumns: customColumns,
 	}
 
 	professionCounts := map[string]int{}
@@ -238,13 +242,12 @@ func fetchReportData(ctx context.Context, fileName string, mIDs, professionTypeI
 			SNo:            data.Total,
 			Name:           name,
 			Phone:          phone.String,
-			Email:          email.String,
 			Halqa:          halqaName,
 			Masjid:         masjidName,
 			ProfessionType: professionType,
 			Profession:     profession,
 			Address:        addressDet,
-			LastMetAt:      formatTime(lastMetAt),
+			LastMetAt:      formatDate(lastMetAt),
 		})
 
 		professionCounts[profession]++
@@ -310,4 +313,12 @@ func formatTime(v sql.NullTime) string {
 	}
 
 	return v.Time.Format(time.RFC3339)
+}
+
+func formatDate(v sql.NullTime) string {
+	if !v.Valid {
+		return ""
+	}
+
+	return v.Time.Format("02-Jan-2006")
 }
